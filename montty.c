@@ -53,17 +53,29 @@ int outputCount[NUM_TERMINALS];
 cond_id_t writing[NUM_TERMINALS];
 cond_id_t reading[NUM_TERMINALS];
 
-
-void addToBuffer(char c, char buffer[], int in, int count) {
-    buffer[in] = c;
-    count += 1;
-    in = (in + 1) % BUFFERSIZE;
+void echoAdd(int term, char c) {
+    echoBuffer[term][echoIn[term]] = c;
+    echoCount[term] += 1;
+    echoIn[term] = (echoIn[term] + 1) % BUFFERSIZE;
 }
 
-char removeFromBuffer(char buffer[], int out, int count) {
-    char c = buffer[out];
-    count -= 1;
-    out = (out + 1) % BUFFERSIZE;
+char echoRemove(int term) {
+    char c = echoBuffer[term][echoOut[term]];
+    echoCount[term] -= 1;
+    echoOut[term] = (echoOut[term] + 1) % BUFFERSIZE;
+    return c;
+}
+
+void inputAdd(int term, char c) {
+    inputBuffer[term][inputIn[term]] = c;
+    inputCount[term] += 1;
+    inputIn[term] = (inputIn[term] + 1) % BUFFERSIZE;
+}
+
+char inputRemove(int term) {
+    char c = inputBuffer[term][inputOut[term]];
+    inputCount[term] -= 1;
+    inputOut[term] = (inputOut[term] + 1) % BUFFERSIZE;
     return c;
 }
 
@@ -82,14 +94,14 @@ void ReceiveInterrupt(int term) {
     // Read the character
     char c = ReadDataRegister(term);
     // Put that character into the input buffer
-    addToBuffer(c, inputBuffer[term], inputIn[term], inputCount[term]);
+    inputAdd(term, c);
     // Put that character into the echo buffer
-    addToBuffer(c, echoBuffer[term], echoIn[term], echoCount[term]);
+    echoAdd(term, c);
 
     // Do the first write data register
     if(inCycle == 0) {
         inCycle = 1;
-        WriteDataRegister(term, removeFromBuffer(echoBuffer[term], echoOut[term], echoCount[term]));
+        WriteDataRegister(term, echoRemove(term));
     }
     CondSignal(writing[term]);
 
@@ -108,9 +120,7 @@ void TransmitInterrupt(int term) {
     printf("Transmit\n");
     // If echo buffer has more to empty after transmission, do so
     if(echoCount[term] > 0) {
-        printf("%d\n", echoCount[term]);
-        WriteDataRegister(term, removeFromBuffer(echoBuffer[term], echoOut[term], echoCount[term]));
-        printf("%d\n", echoCount[term]);
+        WriteDataRegister(term, echoRemove(term));
     } else {
         inCycle = 0;
     }
