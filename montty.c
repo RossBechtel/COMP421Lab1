@@ -26,18 +26,47 @@ or -1 on any error.
 
 **/
 
+#define BUFFERSIZE 100
+
+// Indicates if we are in a transmit interrupt cycle
 static int inCycle;
 
-char inputBuffer[100];
-int inputStart = 0;
-int inputEnd = 0;
+// Input buffer
+char inputBuffer[NUM_TERMINALS][BUFFERSIZE];
+int inputIn[NUM_TERMINALS];
+int inputOut[NUM_TERMINALS];
+int inputCount[NUM_TERMINALS];
 
-char echoBuffer[100];
-int echoStart = 0;
-int echoEnd = 0;
-int echoCount = 0;
+// Echo buffer
+char echoBuffer[NUM_TERMINALS][BUFFERSIZE];
+int echoIn[NUM_TERMINALS];
+int echoOut[NUM_TERMINALS];
+int echoCount[NUM_TERMINALS];
 
-static cond_id_t writing;
+// Output buffer
+char outputBuffer[NUM_TERMINALS][BUFFERSIZE];
+int outputIn[NUM_TERMINALS];
+int outputOut[NUM_TERMINALS];
+int outputCount[NUM_TERMINALS];
+
+// Writing/reading conditionals
+cond_id_t writing[NUM_TERMINALS];
+cond_id_t reading[NUM_TERMINALS];
+
+
+void addToBuffer(char c, char buffer[], int in, int count) {
+    buffer[in] = c;
+    count += 1;
+    in = (in + 1) % BUFFERSIZE;
+}
+
+char removeFromBuffer(char buffer[], int out, int count) {
+    char c = buffer[out];
+    count -= 1;
+    out = (out + 1) % BUFFERSIZE;
+    return c;
+}
+
 
 
 /**
@@ -46,28 +75,23 @@ the terminal hardware signals a receive interrupt
 
 Handle that interrupt here, pretty sure this is just signaling conditional variables
 **/
+extern
 void ReceiveInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
     printf("Rec\n");
     // Read the character
     char c = ReadDataRegister(term);
     // Put that character into the input buffer
-    inputBuffer[inputStart] = c;
-    inputStart += 1;
+    addToBuffer(c, inputBuffer[term], inputIn[term], inputCount[term]);
     // Put that character into the echo buffer
-    echoBuffer[echoStart] = c;
-    echoCount += 1;
+    addToBuffer(c, echoBuffer[term], echoIn[term], echoCount[term]);
 
-    // Make sure no one else is writing
-    //CondWait(writing);
     // Do the first write data register
     if(inCycle == 0) {
         inCycle = 1;
-        WriteDataRegister(term, echoBuffer[echoStart]);
-        echoCount -= 1;
-        echoStart += 1;
+        WriteDataRegister(term, removeFromBuffer(echoBuffer[term], echoOut[term], echoCount[term]));
     }
-    CondSignal(writing);
+    CondSignal(writing[term]);
 
 }
 
@@ -77,22 +101,21 @@ signals a transmit interrupt.
 
 We know we just transmitted one, transmit the next
 **/
+extern
 void TransmitInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
     inCycle = 1;
     printf("Transmit\n");
     // If echo buffer has more to empty after transmission, do so
-    if(echoCount > 0) {
-        printf("%d\n", echoCount);
-        WriteDataRegister(term, echoBuffer[echoStart]);
-        echoCount -= 1;
-        printf("%d\n", echoCount);
-        echoStart += 1;
+    if(echoCount[term] > 0) {
+        printf("%d\n", echoCount[term]);
+        WriteDataRegister(term, removeFromBuffer(echoBuffer[term], echoOut[term], echoCount[term]));
+        printf("%d\n", echoCount[term]);
     } else {
         inCycle = 0;
     }
     
-    CondSignal(writing);
+    CondSignal(writing[term]);
     printf("End transmit\n");
 }
 
@@ -105,6 +128,7 @@ Your driver must block the calling thread until the transmission of the last cha
 is completed (including receiving a TransmitInterrupt following the last character); this call
 should not return until then. 
 **/
+extern
 int WriteTerminal(int term, char *buf, int buflen) {
     Declare_Monitor_Entry_Procedure();
     int i;
@@ -125,6 +149,7 @@ occurs first), but note that, as described in Section 7.2, only characters from 
 terminated by a newline character in the input buffer can be returned. Your driver should block the
 calling thread until this call can be completed.
 **/
+extern
 int ReadTerminal(int term, char *buf, int buflen) {
     (void)term;
     (void)buf;
@@ -132,21 +157,53 @@ int ReadTerminal(int term, char *buf, int buflen) {
     return(0);
 }
 /**
- * This procedure should be called once and only once before any other call to the terminal device driver procedures defined above are called for terminal term.
- * Dont create threads in 
+ * Initializes hardware for the specified terminal
+ * 
+ * Input: the number terminal to be initialized
+ * Output: 0 if successfully initialized, -1 if not
 **/
+extern
 int InitTerminal(int term) {
-    writing = CondCreate();
     Declare_Monitor_Entry_Procedure();
-    
     return(InitHardware(term));
 }
 
+extern
 int TerminalDriverStatistics(struct termstat *stats) {
+    Declare_Monitor_Entry_Procedure();
     (void)stats;
     return(0);
 }
 
+/**
+ * Initializes all buffers and their statistics as well as conditional variables
+ * Should be called before anything else
+ * 
+ * Return: 0 on successful initializatin of the driver
+**/
+extern
 int InitTerminalDriver() {
+    int i;
+    // Set up each terminal's buffers
+    for(i = 0; i < NUM_TERMINALS; i++) {
+        // Init input buffer vars to 0
+        inputIn[i] = 0;
+        inputOut[i] = 0;
+        inputCount[i] = 0;
+
+        // Init echo buffer vars to 0
+        echoIn[i] = 0;
+        echoOut[i] = 0;
+        echoCount[i] = 0;
+
+        // Init output buffer vars to 0
+        outputIn[i] = 0;
+        outputOut[i] = 0;
+        outputCount[i] = 0;
+
+        // Create reading and writing conditionals
+        writing[i] = CondCreate();
+        reading[i] = CondCreate();
+    }
     return(0);
 }
