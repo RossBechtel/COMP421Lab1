@@ -182,10 +182,23 @@ calling thread until this call can be completed.
 **/
 extern
 int ReadTerminal(int term, char *buf, int buflen) {
-    (void)term;
-    (void)buf;
-    (void)buflen;
-    return(0);
+    int i;
+    int count;
+    // Make sure buflen is non-zero
+    if(buflen == 0)
+        return(0);
+    for(i = 0; i < buflen; i++) {
+        // Make sure input buffer non-empty
+        if(inputCount[term] == 0)
+            break;
+        // Copy to buf and add to count of num copied
+        buf[i] = inputRemove(term);
+        count += 1;
+        // Finish if copied buflen chars or copied newline
+        if(count == buflen || buf[i] == '\n')
+            break;
+    }
+    return(count);
 }
 /**
  * Initializes hardware for the specified terminal
