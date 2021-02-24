@@ -32,22 +32,22 @@ or -1 on any error.
 static int inCycle;
 
 // Input buffer
-char inputBuffer[NUM_TERMINALS][BUFFERSIZE];
-int inputIn[NUM_TERMINALS];
-int inputOut[NUM_TERMINALS];
-int inputCount[NUM_TERMINALS];
+static char inputBuffer[NUM_TERMINALS][BUFFERSIZE];
+static int inputIn[NUM_TERMINALS];
+static int inputOut[NUM_TERMINALS];
+static int inputCount[NUM_TERMINALS];
 
 // Echo buffer
-char echoBuffer[NUM_TERMINALS][BUFFERSIZE];
-int echoIn[NUM_TERMINALS];
-int echoOut[NUM_TERMINALS];
-int echoCount[NUM_TERMINALS];
+static char echoBuffer[NUM_TERMINALS][BUFFERSIZE];
+static int echoIn[NUM_TERMINALS];
+static int echoOut[NUM_TERMINALS];
+static int echoCount[NUM_TERMINALS];
 
 // Output buffer
-char outputBuffer[NUM_TERMINALS][BUFFERSIZE];
-int outputIn[NUM_TERMINALS];
-int outputOut[NUM_TERMINALS];
-int outputCount[NUM_TERMINALS];
+static char outputBuffer[NUM_TERMINALS][BUFFERSIZE];
+static int outputIn[NUM_TERMINALS];
+static int outputOut[NUM_TERMINALS];
+static int outputCount[NUM_TERMINALS];
 
 // Writing/reading conditionals
 cond_id_t writing[NUM_TERMINALS];
@@ -79,6 +79,18 @@ char inputRemove(int term) {
     return c;
 }
 
+void outputAdd(int term, char c) {
+    outputBuffer[term][outputIn[term]] = c;
+    outputCount[term] += 1;
+    outputIn[term] = (outputIn[term] + 1) % BUFFERSIZE;
+}
+
+char outputRemove(int term) {
+    char c = outputBuffer[term][outputOut[term]];
+    outputCount[term] -= 1;
+    outputOut[term] = (outputOut[term] + 1) % BUFFERSIZE;
+    return c;
+}
 
 
 /**
@@ -90,7 +102,7 @@ Handle that interrupt here, pretty sure this is just signaling conditional varia
 extern
 void ReceiveInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
-    printf("Rec\n");
+    //printf("Rec\n");
     // Read the character
     char c = ReadDataRegister(term);
     // Put that character into the input buffer
@@ -117,16 +129,18 @@ extern
 void TransmitInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
     inCycle = 1;
-    printf("Transmit\n");
+    //printf("Transmit\n");
     // If echo buffer has more to empty after transmission, do so
     if(echoCount[term] > 0) {
         WriteDataRegister(term, echoRemove(term));
+    } else if(outputCount[term] > 0) {
+        WriteDataRegister(term, outputRemove(term));
     } else {
         inCycle = 0;
     }
     
     CondSignal(writing[term]);
-    printf("End transmit\n");
+    //printf("End transmit\n");
 }
 
 /**
@@ -144,10 +158,17 @@ int WriteTerminal(int term, char *buf, int buflen) {
     int i;
     if(buflen == 0)
         return(0);
+
+    // Put that character into the output buffer
     for(i = 0; i < buflen; i++) {
-        WriteDataRegister(term, buf[i]);
+        outputAdd(term, buf[i]);
     }
-    
+
+    // Do the first write data register
+    if(inCycle == 0) {
+        inCycle = 1;
+        WriteDataRegister(term, outputRemove(term));
+    }
     return(buflen);
 }
 
