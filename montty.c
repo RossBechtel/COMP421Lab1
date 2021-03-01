@@ -14,6 +14,8 @@ static char inputBuffer[NUM_TERMINALS][BUFFERSIZE];
 static int inputIn[NUM_TERMINALS];
 static int inputOut[NUM_TERMINALS];
 static int inputCount[NUM_TERMINALS];
+
+// For keeping track of when we can backspace
 static int currLineSize[NUM_TERMINALS];
 
 // Echo buffer
@@ -27,6 +29,10 @@ static char outputBuffer[NUM_TERMINALS][BUFFERSIZE];
 static int outputIn[NUM_TERMINALS];
 static int outputOut[NUM_TERMINALS];
 static int outputCount[NUM_TERMINALS];
+
+// Special character handling buffers
+static char specialOutputBuffer[NUM_TERMINALS][2];
+static char specialEchoBuffer[NUM_TERMINALS][2];
 
 // Writing/reading conditionals
 static cond_id_t writing[NUM_TERMINALS];
