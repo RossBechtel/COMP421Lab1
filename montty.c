@@ -2,6 +2,7 @@
 #include <terminals.h>
 #include <hardware.h>
 #include <stdio.h>
+#include <string.h>
 
 
 
@@ -102,14 +103,31 @@ Handle that interrupt here, pretty sure this is just signaling conditional varia
 extern
 void ReceiveInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
-    //printf("Rec\n");
     // Read the character
     char c = ReadDataRegister(term);
-    // Put that character into the input buffer
-    inputAdd(term, c);
-    // Put that character into the echo buffer
-    echoAdd(term, c);
-
+    // Return or new line handling
+    if(c == '\r' || c == '\n') {
+        inputAdd(term, '\n');
+        echoAdd(term, '\r');
+        echoAdd(term, '\n');
+    // Backspace handling
+    } else if(c == '\b' || c == '\177') {
+        if(inputCount[term] > 0) {
+            inputRemove(term);
+            echoAdd(term, '\b');
+            echoAdd(term, ' ');
+            echoAdd(term, '\b');
+        }
+    // Any other character
+    } else {
+        if(inputCount[term] != BUFFERSIZE) {
+            // Put that character into the input buffer
+            inputAdd(term, c);
+            // Put that character into the echo buffer
+            echoAdd(term, c);
+        }
+    }
+    
     // Do the first write data register
     if(inCycle == 0) {
         inCycle = 1;
