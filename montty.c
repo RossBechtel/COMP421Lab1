@@ -4,29 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 
-
-
-/**
-Provided:
-hardware.h
-
-void WriteDataRegister(int term, char c) 
-This hardware operation places the character c in the output data register of the terminal identified
-by the terminal number term. On any error, in this project, this function prints an error message on
-stderr and terminates the program.
-
-char ReadDataRegister(int term)
-This hardware operation reads (and returns) the current contents of the input data register of the
-terminal identified by term. On any error, in this project, this function prints an error message on
-stderr and terminates the program.
-
-int InitHardware(int term)
-This hardware operation initializes the terminal identified by term. It must be called once and only
-once before calling any of the other hardware procedures on that terminal. Returns 0 on success
-or -1 on any error.
-
-**/
-
 #define BUFFERSIZE 100
 
 // Indicates if we are in a transmit interrupt cycle
@@ -37,6 +14,7 @@ static char inputBuffer[NUM_TERMINALS][BUFFERSIZE];
 static int inputIn[NUM_TERMINALS];
 static int inputOut[NUM_TERMINALS];
 static int inputCount[NUM_TERMINALS];
+static int currLineSize[NUM_TERMINALS];
 
 // Echo buffer
 static char echoBuffer[NUM_TERMINALS][BUFFERSIZE];
@@ -51,15 +29,28 @@ static int outputOut[NUM_TERMINALS];
 static int outputCount[NUM_TERMINALS];
 
 // Writing/reading conditionals
-cond_id_t writing[NUM_TERMINALS];
-cond_id_t reading[NUM_TERMINALS];
+static cond_id_t writing[NUM_TERMINALS];
+static cond_id_t reading[NUM_TERMINALS];
 
+// Indicates whether a terminal has been initialized
+static int termInitialized[NUM_TERMINALS];
+
+// Indicates if the terminal driver was initialized
+static int driverInitialized;
+
+/**
+ * Adds to the echo buffer of terminal term the character c
+**/
 void echoAdd(int term, char c) {
     echoBuffer[term][echoIn[term]] = c;
     echoCount[term] += 1;
     echoIn[term] = (echoIn[term] + 1) % BUFFERSIZE;
 }
 
+/**
+ * Removes from the echo buffer of terminal term, returning the removed 
+ * character
+**/
 char echoRemove(int term) {
     char c = echoBuffer[term][echoOut[term]];
     echoCount[term] -= 1;
@@ -67,12 +58,19 @@ char echoRemove(int term) {
     return c;
 }
 
+/**
+ * Adds to the input buffer of terminal term the character c
+**/
 void inputAdd(int term, char c) {
     inputBuffer[term][inputIn[term]] = c;
     inputCount[term] += 1;
     inputIn[term] = (inputIn[term] + 1) % BUFFERSIZE;
 }
 
+/**
+ * Removes from the input buffer of terminal term, returning the removed 
+ * character
+**/
 char inputRemove(int term) {
     char c = inputBuffer[term][inputOut[term]];
     inputCount[term] -= 1;
@@ -80,12 +78,19 @@ char inputRemove(int term) {
     return c;
 }
 
+/**
+ * Adds to the output buffer of terminal term the character c
+**/
 void outputAdd(int term, char c) {
     outputBuffer[term][outputIn[term]] = c;
     outputCount[term] += 1;
     outputIn[term] = (outputIn[term] + 1) % BUFFERSIZE;
 }
 
+/**
+ * Removes from the output buffer of terminal term, returning the removed 
+ * character
+**/
 char outputRemove(int term) {
     char c = outputBuffer[term][outputOut[term]];
     outputCount[term] -= 1;
@@ -96,35 +101,53 @@ char outputRemove(int term) {
 
 /**
  * When the receipt of a new character from a keyboard completes,
-the terminal hardware signals a receive interrupt
-
-Handle that interrupt here, pretty sure this is just signaling conditional variables
+ * the terminal hardware signals a receive interrupt. This function reads a
+ * character from the data register, processes that character appropriately,
+ * adding it to the input and echo buffers of terminal term and starts the 
+ * cycle of transmit interrupts if one is not already in motion.
 **/
 extern
 void ReceiveInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
+    // Make sure terminal was already initialized
+    if(termInitialized[term] == 0) {
+        printf("Terminal %d not yet initialized!\n", term);
+        return;
+    }
+    
     // Read the character
     char c = ReadDataRegister(term);
     // Return or new line handling
     if(c == '\r' || c == '\n') {
         inputAdd(term, '\n');
+        currLineSize[term] = 0;
         echoAdd(term, '\r');
         echoAdd(term, '\n');
     // Backspace handling
     } else if(c == '\b' || c == '\177') {
-        if(inputCount[term] > 0) {
+        if(inputCount[term] > 0 && currLineSize[term] != 0) {
             inputRemove(term);
+            currLineSize[term] -= 1;
             echoAdd(term, '\b');
             echoAdd(term, ' ');
             echoAdd(term, '\b');
+        } else {
+            // Beep if there is nothing to backspace
+            echoAdd(term, '\a');
         }
     // Any other character
     } else {
+        // Check if input buffer not full and add to input
         if(inputCount[term] != BUFFERSIZE) {
-            // Put that character into the input buffer
             inputAdd(term, c);
-            // Put that character into the echo buffer
-            echoAdd(term, c);
+            currLineSize[term] += 1; 
+            // Put that character into the echo buffer if not full
+            if(echoCount[term] != BUFFERSIZE) {
+                echoAdd(term, c);
+            } 
+        } else {
+            // Beep if input buffer is full
+            echoAdd(term, '\a');
         }
     }
     
@@ -134,18 +157,22 @@ void ReceiveInterrupt(int term) {
         WriteDataRegister(term, echoRemove(term));
     }
     CondSignal(writing[term]);
-
 }
 
 /**
- * when the transmission of a character to a terminal completes, the terminal hardware
-signals a transmit interrupt.
-
-We know we just transmitted one, transmit the next
+ * When the transmission of a character to a terminal completes, the terminal 
+ * hardware signals a transmit interrupt. This function writes to the data
+ * register of the terminal term.
 **/
 extern
 void TransmitInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
+    // Make sure terminal was already initialized
+    if(termInitialized[term] == 0) {
+        printf("Terminal %d not yet initialized!\n", term);
+        return;
+    }
+    
     inCycle = 1;
     //printf("Transmit\n");
     // If echo buffer has more to empty after transmission, do so
@@ -155,9 +182,10 @@ void TransmitInterrupt(int term) {
         WriteDataRegister(term, outputRemove(term));
     } else {
         inCycle = 0;
+        CondSignal(writing[term]);
     }
     
-    CondSignal(writing[term]);
+    
     //printf("End transmit\n");
 }
 
@@ -173,14 +201,44 @@ should not return until then.
 extern
 int WriteTerminal(int term, char *buf, int buflen) {
     Declare_Monitor_Entry_Procedure();
-    int i;
+    // Make sure terminal was already initialized
+    if(termInitialized[term] == 0) {
+        printf("Terminal %d not yet initialized!\n", term);
+        return(-1);
+    }
+    // Return immediately if buflen is 0
     if(buflen == 0)
         return(0);
 
+    int charsPlaced = 0;
     // Put that character into the output buffer
-    for(i = 0; i < buflen; i++) {
-        outputAdd(term, buf[i]);
+    // for(i = 0; i < buflen; i++) {
+    //     int i;
+    //     if(buf[i] == '\n') {
+    //         outputAdd(term, '\r');
+    //         outputAdd(term, '\n');
+    //         currLineSize[term] = 0;
+    //     } else {
+    //         outputAdd(term, buf[i]);
+    //         currLineSize[term] += 1;
+    //     }
+    // }
+    while(charsPlaced != buflen) {
+        while(outputCount[term] == BUFFERSIZE) {
+            CondWait(writing[term]);
+        }
+        if(buf[charsPlaced] == '\n') {
+            outputAdd(term, '\r');
+            outputAdd(term, '\n');
+            charsPlaced += 1;
+            currLineSize[term] = 0;
+        } else {
+            outputAdd(term, buf[charsPlaced]);
+            charsPlaced += 1;
+            currLineSize[term] += 1;
+        }
     }
+
 
     // Do the first write data register
     if(inCycle == 0) {
@@ -200,6 +258,13 @@ calling thread until this call can be completed.
 **/
 extern
 int ReadTerminal(int term, char *buf, int buflen) {
+    Declare_Monitor_Entry_Procedure();
+    // Make sure terminal was already initialized
+    if(termInitialized[term] == 0) {
+        printf("Terminal %d not yet initialized!\n", term);
+        return(-1);
+    }
+
     int i;
     int count;
     // Make sure buflen is non-zero
@@ -219,14 +284,18 @@ int ReadTerminal(int term, char *buf, int buflen) {
     return(count);
 }
 /**
- * Initializes hardware for the specified terminal
+ * Initializes hardware for the specified terminal term
  * 
- * Input: the number terminal to be initialized
  * Output: 0 if successfully initialized, -1 if not
 **/
 extern
 int InitTerminal(int term) {
     Declare_Monitor_Entry_Procedure();
+    if(termInitialized[term] == 1) {
+        printf("Terminal %d already initialized!\n", term);
+        return(-1);
+    }
+    termInitialized[term] = 1;
     return(InitHardware(term));
 }
 
@@ -245,6 +314,11 @@ int TerminalDriverStatistics(struct termstat *stats) {
 **/
 extern
 int InitTerminalDriver() {
+    // Make sure driver isn't initialized twice
+    if(driverInitialized == 1) {
+        printf("Driver already initialized!\n");
+        return(-1);
+    }  
     int i;
     // Set up each terminal's buffers
     for(i = 0; i < NUM_TERMINALS; i++) {
@@ -252,6 +326,7 @@ int InitTerminalDriver() {
         inputIn[i] = 0;
         inputOut[i] = 0;
         inputCount[i] = 0;
+        currLineSize[i] = 0;
 
         // Init echo buffer vars to 0
         echoIn[i] = 0;
@@ -266,6 +341,11 @@ int InitTerminalDriver() {
         // Create reading and writing conditionals
         writing[i] = CondCreate();
         reading[i] = CondCreate();
+
+        // Set each terminal as unitialized
+        termInitialized[i] = 0;
     }
+    driverInitialized = 1;
+    printf("Driver successfully initialized.\n");
     return(0);
 }
