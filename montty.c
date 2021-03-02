@@ -282,16 +282,20 @@ void TransmitInterrupt(int term) {
     }
     
     inCycle[term] = 1;
-    // If echo buffer has more to empty after transmission, do so
+    // Now write what we can in the following order:
+    // First, the special character echo buffer
     if(specialEchoCount[term] > 0) {
         WriteDataRegister(term, specialEchoRemove(term));
         termstats[term].tty_out += 1;
+    // Next, the normal echo buffer
     } else if(echoCount[term] > 0) {
         WriteDataRegister(term, echoRemove(term));
         termstats[term].tty_out += 1;
+    // Next, the special character output buffer
     } else if(specialOutputCount[term] > 0) {
         WriteDataRegister(term, specialOutputRemove(term));
         termstats[term].tty_out += 1;
+    // Finally, the normal output buffer
     } else if(outputCount[term] > 0) {
         char c = outputRemove(term);
         if(c == '\n') {
@@ -302,6 +306,7 @@ void TransmitInterrupt(int term) {
             WriteDataRegister(term, c);
             termstats[term].tty_out += 1;
         }
+    // All buffers were empty, indicate that we have left the cycle and signal
     } else {
         inCycle[term] = 0;
         CondSignal(writing[term]);
@@ -309,13 +314,9 @@ void TransmitInterrupt(int term) {
 }
 
 /**
- * This call should write to terminal number term, buflen characters from the buffer that starts at
-address buf. The characters must be transmitted by your terminal device driver to the terminal one
-at a time by calling WriteDataRegister() for each character.
-
-Your driver must block the calling thread until the transmission of the last character of the buffer
-is completed (including receiving a TransmitInterrupt following the last character); this call
-should not return until then. 
+ * Writes to terminal number term, buflen characters from the buffer that starts 
+ * at address buf, using an stored output buffer for similarity to other
+ * processes.
 **/
 extern
 int WriteTerminal(int term, char *buf, int buflen) {
@@ -367,12 +368,9 @@ int WriteTerminal(int term, char *buf, int buflen) {
 }
 
 /**
- * This call should copy characters typed from terminal number term, placing each into the buffer
-beginning at address buf. As you copy characters into this buffer, continue until either buflen
-characters have been copied into buf or a newline (’\n’) has been copied into buf (whichever
-occurs first), but note that, as described in Section 7.2, only characters from input lines that have been
-terminated by a newline character in the input buffer can be returned. Your driver should block the
-calling thread until this call can be completed.
+ * Reads characters from terminal term, copying them to the input buf
+ * until reaching a new line or until buflen characters have been copied.
+ * Returns the number of characters copied to buf.
 **/
 extern
 int ReadTerminal(int term, char *buf, int buflen) {
@@ -424,6 +422,7 @@ int InitTerminal(int term) {
         printf("Terminal %d already initialized!\n", term);
         return(-1);
     }
+    // Indicate that the terminal has been initialized
     termInitialized[term] = 1;
     return(InitHardware(term));
 }
@@ -500,6 +499,7 @@ int InitTerminalDriver() {
         termstats[i].user_in = 0;
         termstats[i].user_out = 0;
     }
+    // Indicate that the driver has been initialized
     driverInitialized = 1;
     printf("Driver successfully initialized.\n");
     return(0);
