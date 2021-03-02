@@ -271,7 +271,13 @@ void TransmitInterrupt(int term) {
     } else if(specialOutputCount[term] > 0) {
         WriteDataRegister(term, specialOutputRemove(term));
     } else if(outputCount[term] > 0) {
-        WriteDataRegister(term, outputRemove(term));
+        char c = outputRemove(term);
+        if(c == '\n') {
+            specialOutputAdd(term, '\n');
+            WriteDataRegister(term, '\r');
+        } else {
+            WriteDataRegister(term, c);
+        }
     } else {
         inCycle = 0;
         CondSignal(writing[term]);
@@ -300,29 +306,32 @@ int WriteTerminal(int term, char *buf, int buflen) {
         return(0);
 
     int charsPlaced = 0;
+    // Loop until exhausted the buffer
     while(charsPlaced != buflen) {
+        // Wait until output buffer not full
         while(outputCount[term] == BUFFERSIZE) {
             CondWait(writing[term]);
         }
-        if(buf[charsPlaced] == '\n') {
-            outputAdd(term, '\r');
-            outputAdd(term, '\n');
-            charsPlaced += 1;
-            currLineSize[term] = 0;
+        // Not in a cycle so we can write now
+        if(inCycle == 0) {
+            inCycle = 1;
+            if(buf[charsPlaced] == '\n') {
+                WriteDataRegister(term, '\r');
+                specialOutputAdd(term, '\n');
+                charsPlaced += 1;
+                currLineSize[term] = 0;
+            } else {
+                WriteDataRegister(term, buf[charsPlaced]);
+                charsPlaced += 1;
+                currLineSize[term] += 1;
+            }
+        // In a cycle so just add to buffers
         } else {
             outputAdd(term, buf[charsPlaced]);
             charsPlaced += 1;
-            currLineSize[term] += 1;
         }
     }
-
-
-    // Do the first write data register
-    if(inCycle == 0) {
-        inCycle = 1;
-        WriteDataRegister(term, outputRemove(term));
-    }
-    return(buflen);
+    return(charsPlaced);
 }
 
 /**
