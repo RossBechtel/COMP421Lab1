@@ -7,7 +7,7 @@
 #define BUFFERSIZE 100
 
 // Indicates if we are in a transmit interrupt cycle
-static int inCycle;
+static int inCycle[NUM_TERMINALS];
 
 // Input buffer
 static char inputBuffer[NUM_TERMINALS][BUFFERSIZE];
@@ -172,8 +172,8 @@ void ReceiveInterrupt(int term) {
     char c = ReadDataRegister(term);
     
     // If not in a cycle, write to the data register 
-    if(inCycle == 0) {
-        inCycle = 1;
+    if(inCycle[term] == 0) {
+        inCycle[term] = 1;
         // Return or new line handling
         if(c == '\r' || c == '\n') {
             inputAdd(term, '\n');
@@ -262,7 +262,7 @@ void TransmitInterrupt(int term) {
         return;
     }
     
-    inCycle = 1;
+    inCycle[term] = 1;
     // If echo buffer has more to empty after transmission, do so
     if(specialEchoCount[term] > 0) {
         WriteDataRegister(term, specialEchoRemove(term));
@@ -279,7 +279,7 @@ void TransmitInterrupt(int term) {
             WriteDataRegister(term, c);
         }
     } else {
-        inCycle = 0;
+        inCycle[term] = 0;
         CondSignal(writing[term]);
     }
 }
@@ -301,6 +301,7 @@ int WriteTerminal(int term, char *buf, int buflen) {
         printf("Terminal %d not yet initialized!\n", term);
         return(-1);
     }
+    printf("Write terminal for terminal %d\n", term);
     // Return immediately if buflen is 0
     if(buflen == 0)
         return(0);
@@ -313,8 +314,8 @@ int WriteTerminal(int term, char *buf, int buflen) {
             CondWait(writing[term]);
         }
         // Not in a cycle so we can write now
-        if(inCycle == 0) {
-            inCycle = 1;
+        if(inCycle[term] == 0) {
+            inCycle[term] = 1;
             if(buf[charsPlaced] == '\n') {
                 WriteDataRegister(term, '\r');
                 specialOutputAdd(term, '\n');
@@ -351,20 +352,19 @@ int ReadTerminal(int term, char *buf, int buflen) {
         return(-1);
     }
 
-    int i;
     int count;
     // Make sure buflen is non-zero
     if(buflen == 0)
         return(0);
-    for(i = 0; i < buflen; i++) {
+    while(count < buflen) {
         // Make sure input buffer non-empty
         if(inputCount[term] == 0)
-            break;
+            CondWait(writing[term]);
         // Copy to buf and add to count of num copied
-        buf[i] = inputRemove(term);
+        buf[count] = inputRemove(term);
         count += 1;
         // Finish if copied buflen chars or copied newline
-        if(count == buflen || buf[i] == '\n')
+        if(buf[count] == '\n')
             break;
     }
     return(count);
@@ -441,6 +441,9 @@ int InitTerminalDriver() {
 
         // Set each terminal as unitialized
         termInitialized[i] = 0;
+
+        // Indicate that each terminal is not in a cycle
+        inCycle[i] = 0;
     }
     driverInitialized = 1;
     printf("Driver successfully initialized.\n");
