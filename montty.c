@@ -427,6 +427,11 @@ int InitTerminal(int term) {
     return(InitHardware(term));
 }
 
+/**
+ * Returns a consistent snapshot of the I/O statistics for all terminals all at
+ * once. Copies the statistics from internal memory to the inputted
+ * stats struct.
+**/
 extern
 int TerminalDriverStatistics(struct termstat *stats) {
     Declare_Monitor_Entry_Procedure();
