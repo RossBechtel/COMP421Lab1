@@ -170,46 +170,82 @@ void ReceiveInterrupt(int term) {
     
     // Read the character
     char c = ReadDataRegister(term);
-    // Return or new line handling
-    if(c == '\r' || c == '\n') {
-        inputAdd(term, '\n');
-        currLineSize[term] = 0;
-        echoAdd(term, '\r');
-        echoAdd(term, '\n');
-    // Backspace handling
-    } else if(c == '\b' || c == '\177') {
-        if(inputCount[term] > 0 && currLineSize[term] != 0) {
-            inputRemove(term);
-            currLineSize[term] -= 1;
-            echoAdd(term, '\b');
-            echoAdd(term, ' ');
-            echoAdd(term, '\b');
-        } else {
-            // Beep if there is nothing to backspace
-            echoAdd(term, '\a');
-        }
-    // Any other character
-    } else {
-        // Check if input buffer not full and add to input
-        if(inputCount[term] != BUFFERSIZE) {
-            inputAdd(term, c);
-            currLineSize[term] += 1; 
-            // Put that character into the echo buffer if not full
-            if(echoCount[term] != BUFFERSIZE) {
-                echoAdd(term, c);
-            } 
-        } else {
-            // Beep if input buffer is full
-            echoAdd(term, '\a');
-        }
-    }
     
-    // Do the first write data register
+    // If not in a cycle, write to the data register 
     if(inCycle == 0) {
         inCycle = 1;
-        WriteDataRegister(term, echoRemove(term));
+        // Return or new line handling
+        if(c == '\r' || c == '\n') {
+            inputAdd(term, '\n');
+            currLineSize[term] = 0;
+            WriteDataRegister(term, '\r');
+            specialEchoAdd(term, '\n');
+        // Backspace handling
+        } else if(c == '\b' || c == '\177') {
+            if(inputCount[term] > 0 && currLineSize[term] != 0) {
+                inputRemove(term);
+                currLineSize[term] -= 1;
+                WriteDataRegister(term, '\b');
+                specialEchoAdd(term, ' ');
+                specialEchoAdd(term, '\b');
+            } else {
+                // Beep if there is nothing to backspace
+                WriteDataRegister(term, '\a');
+            }
+        // Any other character
+        } else {
+            // Check if input buffer not full and add to input
+            if(inputCount[term] != BUFFERSIZE) {
+                inputAdd(term, c);
+                currLineSize[term] += 1; 
+                // Put that character into the echo buffer if not full
+                if(echoCount[term] != BUFFERSIZE) {
+                    WriteDataRegister(term, c);
+                } 
+            } else {
+                // Beep if input buffer is full
+                WriteDataRegister(term, '\a');
+            }
+        }
+        // Finally, signal that we just wrote
+        CondSignal(writing[term]);
+
+    // If not in a cycle, just add to buffers for later writing
+    } else {
+        // Return or new line handling
+        if(c == '\r' || c == '\n') {
+            inputAdd(term, '\n');
+            currLineSize[term] = 0;
+            echoAdd(term, '\r');
+            specialEchoAdd(term, '\n');
+        // Backspace handling
+        } else if(c == '\b' || c == '\177') {
+            if(inputCount[term] > 0 && currLineSize[term] != 0) {
+                inputRemove(term);
+                currLineSize[term] -= 1;
+                echoAdd(term, '\b');
+                specialEchoAdd(term, ' ');
+                specialEchoAdd(term, '\b');
+            } else {
+                // Beep if there is nothing to backspace
+                echoAdd(term, '\a');
+            }
+        // Any other character
+        } else {
+            // Check if input buffer not full and add to input
+            if(inputCount[term] != BUFFERSIZE) {
+                inputAdd(term, c);
+                currLineSize[term] += 1; 
+                // Put that character into the echo buffer if not full
+                if(echoCount[term] != BUFFERSIZE) {
+                    echoAdd(term, c);
+                } 
+            } else {
+                // Beep if input buffer is full
+                echoAdd(term, '\a');
+            }
+        }
     }
-    CondSignal(writing[term]);
 }
 
 /**
@@ -227,19 +263,19 @@ void TransmitInterrupt(int term) {
     }
     
     inCycle = 1;
-    //printf("Transmit\n");
     // If echo buffer has more to empty after transmission, do so
-    if(echoCount[term] > 0) {
+    if(specialEchoCount[term] > 0) {
+        WriteDataRegister(term, specialEchoRemove(term));
+    } else if(echoCount[term] > 0) {
         WriteDataRegister(term, echoRemove(term));
+    } else if(specialOutputCount[term] > 0) {
+        WriteDataRegister(term, specialOutputRemove(term));
     } else if(outputCount[term] > 0) {
         WriteDataRegister(term, outputRemove(term));
     } else {
         inCycle = 0;
         CondSignal(writing[term]);
     }
-    
-    
-    //printf("End transmit\n");
 }
 
 /**
