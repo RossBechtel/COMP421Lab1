@@ -32,7 +32,14 @@ static int outputCount[NUM_TERMINALS];
 
 // Special character handling buffers
 static char specialOutputBuffer[NUM_TERMINALS][2];
+static int specialOutputIn[NUM_TERMINALS];
+static int specialOutputOut[NUM_TERMINALS];
+static int specialOutputCount[NUM_TERMINALS];
+
 static char specialEchoBuffer[NUM_TERMINALS][2];
+static int specialEchoIn[NUM_TERMINALS];
+static int specialEchoOut[NUM_TERMINALS];
+static int specialEchoCount[NUM_TERMINALS];
 
 // Writing/reading conditionals
 static cond_id_t writing[NUM_TERMINALS];
@@ -101,6 +108,46 @@ char outputRemove(int term) {
     char c = outputBuffer[term][outputOut[term]];
     outputCount[term] -= 1;
     outputOut[term] = (outputOut[term] + 1) % BUFFERSIZE;
+    return c;
+}
+
+/**
+ * Adds to special output buffer of terminal term the character c
+**/
+void specialOutputAdd(int term, char c) {
+    specialOutputBuffer[term][specialOutputIn[term]] = c;
+    specialOutputCount[term] += 1;
+    specialOutputIn[term] = (specialOutputIn[term] + 1) % 2;
+}
+
+/**
+ * Removes from special output buffer of terminal term, returning the removed 
+ * character
+**/
+char specialOutputRemove(int term) {
+    char c = specialOutputBuffer[term][specialOutputOut[term]];
+    specialOutputCount[term] -= 1;
+    specialOutputOut[term] = (specialOutputOut[term] + 1) % 2;
+    return c;
+}
+
+/**
+ * Adds to special echo buffer of terminal term the character c
+**/
+void specialEchoAdd(int term, char c) {
+    specialEchoBuffer[term][specialEchoIn[term]] = c;
+    specialEchoCount[term] += 1;
+    specialEchoIn[term] = (specialEchoIn[term] + 1) % 2;
+}
+
+/**
+ * Removes from special echo buffer of terminal term, returning the removed 
+ * character
+**/
+char specialEchoRemove(int term) {
+    char c = specialEchoBuffer[term][specialEchoOut[term]];
+    specialEchoCount[term] -= 1;
+    specialEchoOut[term] = (specialEchoOut[term] + 1) % 2;
     return c;
 }
 
@@ -217,18 +264,6 @@ int WriteTerminal(int term, char *buf, int buflen) {
         return(0);
 
     int charsPlaced = 0;
-    // Put that character into the output buffer
-    // for(i = 0; i < buflen; i++) {
-    //     int i;
-    //     if(buf[i] == '\n') {
-    //         outputAdd(term, '\r');
-    //         outputAdd(term, '\n');
-    //         currLineSize[term] = 0;
-    //     } else {
-    //         outputAdd(term, buf[i]);
-    //         currLineSize[term] += 1;
-    //     }
-    // }
     while(charsPlaced != buflen) {
         while(outputCount[term] == BUFFERSIZE) {
             CondWait(writing[term]);
@@ -332,6 +367,8 @@ int InitTerminalDriver() {
         inputIn[i] = 0;
         inputOut[i] = 0;
         inputCount[i] = 0;
+
+        // Init curr line size vars to 0
         currLineSize[i] = 0;
 
         // Init echo buffer vars to 0
@@ -343,6 +380,15 @@ int InitTerminalDriver() {
         outputIn[i] = 0;
         outputOut[i] = 0;
         outputCount[i] = 0;
+
+        // Init special buffer vars to 0
+        specialOutputIn[i] = 0;
+        specialOutputOut[i] = 0;
+        specialOutputCount[i] = 0;
+
+        specialEchoIn[i] = 0;
+        specialEchoOut[i] = 0;
+        specialEchoCount[i] = 0;
 
         // Create reading and writing conditionals
         writing[i] = CondCreate();
