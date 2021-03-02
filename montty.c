@@ -51,6 +51,9 @@ static int termInitialized[NUM_TERMINALS];
 // Indicates if the terminal driver was initialized
 static int driverInitialized;
 
+// For keeping track of terminal stats
+static struct termstat termstats[NUM_TERMINALS];
+
 /**
  * Adds to the echo buffer of terminal term the character c
 **/
@@ -170,6 +173,7 @@ void ReceiveInterrupt(int term) {
     
     // Read the character
     char c = ReadDataRegister(term);
+    termstats[term].tty_in += 1;
     
     // If not in a cycle, write to the data register 
     if(inCycle[term] == 0) {
@@ -179,6 +183,7 @@ void ReceiveInterrupt(int term) {
             inputAdd(term, '\n');
             currLineSize[term] = 0;
             WriteDataRegister(term, '\r');
+            termstats[term].tty_out += 1;
             specialEchoAdd(term, '\n');
         // Backspace handling
         } else if(c == '\b' || c == '\177') {
@@ -186,11 +191,13 @@ void ReceiveInterrupt(int term) {
                 inputRemove(term);
                 currLineSize[term] -= 1;
                 WriteDataRegister(term, '\b');
+                termstats[term].tty_out += 1;
                 specialEchoAdd(term, ' ');
                 specialEchoAdd(term, '\b');
             } else {
                 // Beep if there is nothing to backspace
                 WriteDataRegister(term, '\a');
+                termstats[term].tty_out += 1;
             }
         // Any other character
         } else {
@@ -201,10 +208,12 @@ void ReceiveInterrupt(int term) {
                 // Put that character into the echo buffer if not full
                 if(echoCount[term] != BUFFERSIZE) {
                     WriteDataRegister(term, c);
+                    termstats[term].tty_out += 1;
                 } 
             } else {
                 // Beep if input buffer is full
                 WriteDataRegister(term, '\a');
+                termstats[term].tty_out += 1;
             }
         }
         // Finally, signal that we just wrote
@@ -266,17 +275,22 @@ void TransmitInterrupt(int term) {
     // If echo buffer has more to empty after transmission, do so
     if(specialEchoCount[term] > 0) {
         WriteDataRegister(term, specialEchoRemove(term));
+        termstats[term].tty_out += 1;
     } else if(echoCount[term] > 0) {
         WriteDataRegister(term, echoRemove(term));
+        termstats[term].tty_out += 1;
     } else if(specialOutputCount[term] > 0) {
         WriteDataRegister(term, specialOutputRemove(term));
+        termstats[term].tty_out += 1;
     } else if(outputCount[term] > 0) {
         char c = outputRemove(term);
         if(c == '\n') {
             specialOutputAdd(term, '\n');
             WriteDataRegister(term, '\r');
+            termstats[term].tty_out += 1;
         } else {
             WriteDataRegister(term, c);
+            termstats[term].tty_out += 1;
         }
     } else {
         inCycle[term] = 0;
@@ -318,11 +332,13 @@ int WriteTerminal(int term, char *buf, int buflen) {
             inCycle[term] = 1;
             if(buf[charsPlaced] == '\n') {
                 WriteDataRegister(term, '\r');
+                termstats[term].tty_out += 1;
                 specialOutputAdd(term, '\n');
                 charsPlaced += 1;
                 currLineSize[term] = 0;
             } else {
                 WriteDataRegister(term, buf[charsPlaced]);
+                termstats[term].tty_out += 1;
                 charsPlaced += 1;
                 currLineSize[term] += 1;
             }
@@ -332,6 +348,7 @@ int WriteTerminal(int term, char *buf, int buflen) {
             charsPlaced += 1;
         }
     }
+    termstats[term].user_in += charsPlaced;
     return(charsPlaced);
 }
 
@@ -357,16 +374,17 @@ int ReadTerminal(int term, char *buf, int buflen) {
     if(buflen == 0)
         return(0);
     while(count < buflen) {
-        // Make sure input buffer non-empty
-        if(inputCount[term] == 0)
+        // Make sure input buffer non-empty, wait until its not
+        while(inputCount[term] == 0)
             CondWait(writing[term]);
         // Copy to buf and add to count of num copied
         buf[count] = inputRemove(term);
         count += 1;
-        // Finish if copied buflen chars or copied newline
+        // Finish if copied newline
         if(buf[count] == '\n')
             break;
     }
+    termstats[term].user_out += count;
     return(count);
 }
 /**
@@ -388,7 +406,13 @@ int InitTerminal(int term) {
 extern
 int TerminalDriverStatistics(struct termstat *stats) {
     Declare_Monitor_Entry_Procedure();
-    (void)stats;
+    int i;
+    for(i = 0; i < NUM_TERMINALS; i++) {
+        stats[i].tty_in = termstats[i].tty_in;
+        stats[i].tty_out = termstats[i].tty_out;
+        stats[i].user_in = termstats[i].user_in;
+        stats[i].user_out = termstats[i].user_out;
+    }
     return(0);
 }
 
@@ -444,6 +468,12 @@ int InitTerminalDriver() {
 
         // Indicate that each terminal is not in a cycle
         inCycle[i] = 0;
+
+        // Init stats
+        termstats[i].tty_in = 0;
+        termstats[i].tty_out = 0;
+        termstats[i].user_in = 0;
+        termstats[i].user_out = 0;
     }
     driverInitialized = 1;
     printf("Driver successfully initialized.\n");
