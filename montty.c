@@ -165,6 +165,11 @@ char specialEchoRemove(int term) {
 extern
 void ReceiveInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
+    // Make sure driver was initialized
+    if(driverInitialized == 0) {
+        printf("Driver must be initialized first!");
+        return;
+    }
     // Make sure terminal was already initialized
     if(termInitialized[term] == 0) {
         printf("Terminal %d not yet initialized!\n", term);
@@ -265,6 +270,11 @@ void ReceiveInterrupt(int term) {
 extern
 void TransmitInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
+    // Make sure driver was initialized
+    if(driverInitialized == 0) {
+        printf("Driver must be initialized first!");
+        return;
+    }
     // Make sure terminal was already initialized
     if(termInitialized[term] == 0) {
         printf("Terminal %d not yet initialized!\n", term);
@@ -310,12 +320,16 @@ should not return until then.
 extern
 int WriteTerminal(int term, char *buf, int buflen) {
     Declare_Monitor_Entry_Procedure();
+    // Make sure driver was initialized
+    if(driverInitialized == 0) {
+        printf("Driver must be initialized first!");
+        return(-1);
+    }
     // Make sure terminal was already initialized
     if(termInitialized[term] == 0) {
         printf("Terminal %d not yet initialized!\n", term);
         return(-1);
     }
-    printf("Write terminal for terminal %d\n", term);
     // Return immediately if buflen is 0
     if(buflen == 0)
         return(0);
@@ -363,6 +377,11 @@ calling thread until this call can be completed.
 extern
 int ReadTerminal(int term, char *buf, int buflen) {
     Declare_Monitor_Entry_Procedure();
+    // Make sure driver was initialized
+    if(driverInitialized == 0) {
+        printf("Driver must be initialized first!");
+        return(-1);
+    }
     // Make sure terminal was already initialized
     if(termInitialized[term] == 0) {
         printf("Terminal %d not yet initialized!\n", term);
@@ -395,6 +414,12 @@ int ReadTerminal(int term, char *buf, int buflen) {
 extern
 int InitTerminal(int term) {
     Declare_Monitor_Entry_Procedure();
+    // Make sure driver was initialized
+    if(driverInitialized == 0) {
+        printf("Driver must be initialized first!");
+        return(-1);
+    }
+    // Make sure terminal was initialized
     if(termInitialized[term] == 1) {
         printf("Terminal %d already initialized!\n", term);
         return(-1);
