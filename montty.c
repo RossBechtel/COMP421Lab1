@@ -398,8 +398,10 @@ int ReadTerminal(int term, char *buf, int buflen) {
         buf[count] = inputRemove(term);
         count += 1;
         // Finish if copied newline
-        if(buf[count] == '\n')
+        if(buf[count - 1] == '\n') {
+            printf("newline\n");
             break;
+        }  
     }
     termstats[term].user_out += count;
     return(count);
@@ -422,6 +424,11 @@ int InitTerminal(int term) {
         printf("Terminal %d already initialized!\n", term);
         return(-1);
     }
+    // Init stats to 0
+    termstats[term].tty_in = 0;
+    termstats[term].tty_out = 0;
+    termstats[term].user_in = 0;
+    termstats[term].user_out = 0;
     // Indicate that the terminal has been initialized
     termInitialized[term] = 1;
     return(InitHardware(term));
@@ -435,6 +442,11 @@ int InitTerminal(int term) {
 extern
 int TerminalDriverStatistics(struct termstat *stats) {
     Declare_Monitor_Entry_Procedure();
+    // Make sure driver was initialized
+    if(driverInitialized == 0) {
+        printf("Driver must be initialized first!");
+        return(-1);
+    }
     int i;
     for(i = 0; i < NUM_TERMINALS; i++) {
         stats[i].tty_in = termstats[i].tty_in;
@@ -499,10 +511,10 @@ int InitTerminalDriver() {
         inCycle[i] = 0;
 
         // Init stats
-        termstats[i].tty_in = 0;
-        termstats[i].tty_out = 0;
-        termstats[i].user_in = 0;
-        termstats[i].user_out = 0;
+        termstats[i].tty_in = -1;
+        termstats[i].tty_out = -1;
+        termstats[i].user_in = -1;
+        termstats[i].user_out = -1;
     }
     // Indicate that the driver has been initialized
     driverInitialized = 1;
