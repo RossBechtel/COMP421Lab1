@@ -84,14 +84,25 @@ void inputAdd(int term, char c) {
 }
 
 /**
- * Removes from the input buffer of terminal term, returning the removed 
- * character
+ * Removes last char from the input buffer of terminal term, returning the removed 
+ * character 
 **/
 char inputRemove(int term) {
     char c = inputBuffer[term][inputOut[term]];
     inputCount[term] -= 1;
     inputOut[term] = (inputOut[term] + 1) % BUFFERSIZE;
     return c;
+}
+
+/**
+ * Removes first char from the input buffer of terminal term, returning the removed 
+ * character. Used for backspace
+**/
+char inputRemoveFirst(int term) {
+    char c = inputBuffer[term][inputIn[term] - 1];
+    inputCount[term] -= 1;
+    inputIn[term] = (inputIn[term] - 1) % BUFFERSIZE;
+    return c; 
 }
 
 /**
@@ -193,7 +204,7 @@ void ReceiveInterrupt(int term) {
         // Backspace handling
         } else if(c == '\b' || c == '\177') {
             if(inputCount[term] > 0 && currLineSize[term] != 0) {
-                inputRemove(term);
+                inputRemoveFirst(term);
                 currLineSize[term] -= 1;
                 WriteDataRegister(term, '\b');
                 termstats[term].tty_out += 1;
@@ -235,7 +246,7 @@ void ReceiveInterrupt(int term) {
         // Backspace handling
         } else if(c == '\b' || c == '\177') {
             if(inputCount[term] > 0 && currLineSize[term] != 0) {
-                inputRemove(term);
+                inputRemoveFirst(term);
                 currLineSize[term] -= 1;
                 echoAdd(term, '\b');
                 specialEchoAdd(term, ' ');
@@ -385,7 +396,6 @@ int ReadTerminal(int term, char *buf, int buflen) {
         printf("Terminal %d not yet initialized!\n", term);
         return(-1);
     }
-
     int count;
     // Make sure buflen is non-zero
     if(buflen == 0)
@@ -396,6 +406,7 @@ int ReadTerminal(int term, char *buf, int buflen) {
             CondWait(writing[term]);
         // Copy to buf and add to count of num copied
         buf[count] = inputRemove(term);
+        //printf("%c\n", buf[count]);
         count += 1;
         // Finish if copied newline
         if(buf[count - 1] == '\n') {
