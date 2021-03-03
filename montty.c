@@ -178,7 +178,7 @@ void ReceiveInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
     // Make sure driver was initialized
     if(driverInitialized == 0) {
-        printf("Driver must be initialized first!");
+        printf("Driver must be initialized first!\n");
         return;
     }
     // Make sure terminal was already initialized
@@ -283,7 +283,7 @@ void TransmitInterrupt(int term) {
     Declare_Monitor_Entry_Procedure();
     // Make sure driver was initialized
     if(driverInitialized == 0) {
-        printf("Driver must be initialized first!");
+        printf("Driver must be initialized first!\n");
         return;
     }
     // Make sure terminal was already initialized
@@ -334,12 +334,22 @@ int WriteTerminal(int term, char *buf, int buflen) {
     Declare_Monitor_Entry_Procedure();
     // Make sure driver was initialized
     if(driverInitialized == 0) {
-        printf("Driver must be initialized first!");
+        printf("Driver must be initialized first!\n");
         return(-1);
     }
     // Make sure terminal was already initialized
     if(termInitialized[term] == 0) {
         printf("Terminal %d not yet initialized!\n", term);
+        return(-1);
+    }
+    // Make sure buflen is > -1
+    if (buflen < 0) {
+        printf("Buflen must be greater than or equal to 0!\n");
+        return(-1);
+    }
+    // Make sure buf is not null
+    if (buf == NULL) {
+        printf("Buffer cannot be null! Input a valid buffer!\n");
         return(-1);
     }
     // Return immediately if buflen is 0
@@ -388,12 +398,22 @@ int ReadTerminal(int term, char *buf, int buflen) {
     Declare_Monitor_Entry_Procedure();
     // Make sure driver was initialized
     if(driverInitialized == 0) {
-        printf("Driver must be initialized first!");
+        printf("Driver must be initialized first!\n");
         return(-1);
     }
     // Make sure terminal was already initialized
     if(termInitialized[term] == 0) {
         printf("Terminal %d not yet initialized!\n", term);
+        return(-1);
+    }
+    // Make sure buflen is > -1
+    if (buflen < 0) {
+        printf("Buflen must be greater than or equal to 0!\n");
+        return(-1);
+    }
+    // Make sure buf is not null
+    if (buf == NULL) {
+        printf("Buffer cannot be null! Input a valid buffer!\n");
         return(-1);
     }
     int count;
@@ -406,11 +426,9 @@ int ReadTerminal(int term, char *buf, int buflen) {
             CondWait(writing[term]);
         // Copy to buf and add to count of num copied
         buf[count] = inputRemove(term);
-        //printf("%c\n", buf[count]);
         count += 1;
         // Finish if copied newline
         if(buf[count - 1] == '\n') {
-            printf("newline\n");
             break;
         }  
     }
@@ -427,10 +445,14 @@ int InitTerminal(int term) {
     Declare_Monitor_Entry_Procedure();
     // Make sure driver was initialized
     if(driverInitialized == 0) {
-        printf("Driver must be initialized first!");
+        printf("Driver must be initialized first!\n");
         return(-1);
     }
-    // Make sure terminal was initialized
+    // Make sure its a valid terminal number
+    if(term >= NUM_TERMINALS || term < 0) {
+        printf("Invalid terminal number, choose between 0 and %d\n", NUM_TERMINALS);
+    }
+    // Make sure terminal wasn't initialized
     if(termInitialized[term] == 1) {
         printf("Terminal %d already initialized!\n", term);
         return(-1);
@@ -456,6 +478,11 @@ int TerminalDriverStatistics(struct termstat *stats) {
     // Make sure driver was initialized
     if(driverInitialized == 0) {
         printf("Driver must be initialized first!");
+        return(-1);
+    }
+    // Make sure stats is not null
+    if (stats == NULL) {
+        printf("Stats cannot be null! Input a valid stats struct!\n");
         return(-1);
     }
     int i;
