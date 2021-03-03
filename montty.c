@@ -54,6 +54,9 @@ static int driverInitialized;
 // For keeping track of terminal stats
 static struct termstat termstats[NUM_TERMINALS];
 
+// For keeping track of input buffer new lines
+static int newLines[NUM_TERMINALS];
+
 /**
  * Adds to the echo buffer of terminal term the character c
 **/
@@ -197,6 +200,9 @@ void ReceiveInterrupt(int term) {
         // Return or new line handling
         if(c == '\r' || c == '\n') {
             inputAdd(term, '\n');
+            newLines[term] += 1;
+            CondSignal(reading[term]);
+            printf("%d\n", newLines[term]);
             currLineSize[term] = 0;
             WriteDataRegister(term, '\r');
             termstats[term].tty_out += 1;
@@ -235,11 +241,14 @@ void ReceiveInterrupt(int term) {
         // Finally, signal that we just wrote
         CondSignal(writing[term]);
 
-    // If not in a cycle, just add to buffers for later writing
+    // If in a cycle, just add to buffers for later writing
     } else {
         // Return or new line handling
         if(c == '\r' || c == '\n') {
             inputAdd(term, '\n');
+            newLines[term] += 1;
+            CondSignal(reading[term]);
+            printf("%d\n", newLines[term]);
             currLineSize[term] = 0;
             echoAdd(term, '\r');
             specialEchoAdd(term, '\n');
@@ -420,19 +429,21 @@ int ReadTerminal(int term, char *buf, int buflen) {
     // Make sure buflen is non-zero
     if(buflen == 0)
         return(0);
+    // Make sure new line has been seen, wait until its not
+    while(newLines[term] == 0)
+        CondWait(reading[term]);
     while(count < buflen) {
-        // Make sure input buffer non-empty, wait until its not
-        while(inputCount[term] == 0)
-            CondWait(writing[term]);
         // Copy to buf and add to count of num copied
         buf[count] = inputRemove(term);
         count += 1;
         // Finish if copied newline
         if(buf[count - 1] == '\n') {
+            newLines[term] -= 1;
             break;
         }  
     }
     termstats[term].user_out += count;
+    CondSignal(reading[term]);
     return(count);
 }
 /**
@@ -553,6 +564,9 @@ int InitTerminalDriver() {
         termstats[i].tty_out = -1;
         termstats[i].user_in = -1;
         termstats[i].user_out = -1;
+
+        // Indicate that a new line has not been placed into input buffer
+        newLines[i] = 0;
     }
     // Indicate that the driver has been initialized
     driverInitialized = 1;
